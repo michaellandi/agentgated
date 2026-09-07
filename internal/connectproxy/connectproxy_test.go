@@ -136,6 +136,90 @@ func TestConnectBlockedByPolicy(t *testing.T) {
 	}
 }
 
+func TestEvaluateBlocksRawIPLiteralNotOnAllowList(t *testing.T) {
+	// filter_mode: deny with an empty deny list would otherwise silently
+	// allow any raw IP, since an IP essentially never matches a deny list
+	// of hostnames. A CONNECT target that's already an IP has skipped DNS
+	// entirely, so this must not be implicitly allowed.
+	f := filter.Filter{Mode: filter.DenyList}
+	if got := evaluate(f, "93.184.216.34"); got != filter.Block {
+		t.Errorf("evaluate() = %v, want Block for an unlisted raw IP under deny mode", got)
+	}
+}
+
+func TestEvaluateAllowsRawIPLiteralExplicitlyOnAllowList(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowlist.txt")
+	if err := os.WriteFile(path, []byte("93.184.216.34\n"), 0o644); err != nil {
+		t.Fatalf("write allow list: %v", err)
+	}
+	allowList, err := filter.LoadList(path)
+	if err != nil {
+		t.Fatalf("load allow list: %v", err)
+	}
+
+	f := filter.Filter{Mode: filter.DenyList, AllowList: allowList}
+	if got := evaluate(f, "93.184.216.34"); got != filter.Allow {
+		t.Errorf("evaluate() = %v, want Allow for a raw IP explicitly on the allow list", got)
+	}
+}
+
+func TestEvaluateNoneModeIgnoresRawIPRule(t *testing.T) {
+	// filter.None means filtering is off entirely; the raw-IP restriction
+	// must not silently reintroduce filtering when an operator explicitly
+	// disabled it.
+	f := filter.Filter{Mode: filter.None}
+	if got := evaluate(f, "93.184.216.34"); got != filter.Allow {
+		t.Errorf("evaluate() = %v, want Allow for a raw IP under none mode", got)
+	}
+}
+
+func TestEvaluateHostnamesUnaffectedByRawIPRule(t *testing.T) {
+	f := filter.Filter{Mode: filter.DenyList}
+	if got := evaluate(f, "example.com"); got != filter.Allow {
+		t.Errorf("evaluate() = %v, want Allow for an unlisted hostname under deny mode", got)
+	}
+}
+
+func TestConnectBlocksRawIPLiteralByDefault(t *testing.T) {
+	// upstream is already "127.0.0.1:<port>" — a raw IP literal target.
+	upstream := echoServer(t)
+
+	// deny mode, nothing on the deny list: a hostname target would be
+	// allowed, but a raw IP target must not be.
+	proxyAddr := startProxy(t, filter.Filter{Mode: filter.DenyList})
+
+	_, _, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for an unlisted raw IP CONNECT target", status)
+	}
+}
+
+func TestConnectAllowsRawIPLiteralOnAllowList(t *testing.T) {
+	upstream := echoServer(t)
+	upstreamIP, _, err := net.SplitHostPort(upstream)
+	if err != nil {
+		t.Fatalf("split upstream addr: %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowlist.txt")
+	if err := os.WriteFile(path, []byte(upstreamIP+"\n"), 0o644); err != nil {
+		t.Fatalf("write allow list: %v", err)
+	}
+	allowList, err := filter.LoadList(path)
+	if err != nil {
+		t.Fatalf("load allow list: %v", err)
+	}
+
+	proxyAddr := startProxy(t, filter.Filter{Mode: filter.DenyList, AllowList: allowList})
+
+	_, _, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for a raw IP explicitly on the allow list", status)
+	}
+}
+
 func TestConnectRejectsNonConnectMethod(t *testing.T) {
 	proxyAddr := startProxy(t, filter.Filter{Mode: filter.None})
 

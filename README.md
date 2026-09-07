@@ -174,6 +174,40 @@ An agent process can be sandboxed by setting `HTTPS_PROXY=http://127.0.0.1:3128`
 (and `HTTP_PROXY` if it makes plain HTTP requests too — only CONNECT tunnels
 are currently supported, so plain-HTTP proxying isn't filtered).
 
+## Security model and known limitations
+
+What hostname matching does guarantee: an allow/deny entry only matches
+itself and its real subdomains — `google.com` matches `mail.google.com` but
+never `badgoogle.com`, `xgoogle.com`, or any other look-alike glued on
+without a label boundary (`internal/filter`'s `Contains` splits on `.`
+rather than doing a raw string-suffix check, so this can't regress silently;
+see `TestListDoesNotMatchLookalikeDomains`). A CONNECT target that's a raw
+IP literal (an agent that already has an address and skips hostname
+resolution) is never implicitly allowed by "not on the deny list" — unlike
+a hostname, there's no way to enumerate bad IPs in advance, so a raw IP must
+be explicitly present on the allow list to pass, in every mode except
+`none`.
+
+What it does not (yet) guarantee, even with every other egress path from
+the network blocked and *all* traffic forced through agentgated's own
+listeners: neither proxy inspects content once a target is decided.
+- **DNS tunneling to a permitted domain.** Suffix matching says nothing
+  about the labels *under* an allowed/non-denied domain, so an agent can
+  encode data into query names like `<data>.api.anthropic.com` and have it
+  leave via every DNS query, regardless of what the response is. This is
+  the gap the planned exfiltration heuristics (entropy/beaconing analysis
+  on the query log) are meant to eventually close.
+- **CONNECT tunnels are byte-blind past the hostname check**, with no port
+  or protocol restriction. Once a hostname is permitted, an agent can send
+  it arbitrary HTTP request bodies/paths/headers, or tunnel an unrelated
+  protocol (e.g. DNS-over-HTTPS/TLS) to it on any port — agentgated has no
+  visibility into what crosses an open tunnel.
+
+In short: tightening `filter_mode: allow` to a small, trusted set of
+hostnames meaningfully shrinks what an agent can reach, but a hostname
+allow list alone doesn't guarantee no data can leave through an allowed
+destination — only that the destination is one you chose to trust.
+
 ## Origins
 
 agentgated started as a Go port of

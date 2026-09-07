@@ -85,7 +85,7 @@ func (p *Proxy) handle(conn net.Conn) {
 	}
 
 	f := p.resolver.Resolve(context.Background(), tenant.Request{IP: client, Header: req.Header})
-	if f.Evaluate(host) == filter.Block {
+	if evaluate(f, host) == filter.Block {
 		respond(conn, http.StatusForbidden, "host blocked by policy")
 		p.log(client, req.Method, req.Host, "block", "policy", start)
 		return
@@ -138,6 +138,27 @@ func (p *Proxy) log(client, method, target, decision, reason string, start time.
 		"reason", reason,
 		"duration_ms", time.Since(start).Milliseconds(),
 	)
+}
+
+// evaluate applies f to a CONNECT target host, with one addition: a raw IP
+// literal is never implicitly permitted just because it doesn't appear on
+// a deny list. Unlike a hostname, there's no way to enumerate "bad IPs" in
+// advance, so f's deny-list mode would otherwise silently allow a CONNECT
+// straight to any IP an agent already knows — bypassing hostname policy
+// entirely. An IP literal must be explicitly present on the allow list to
+// pass, except in filter.None mode, which disables filtering entirely.
+func evaluate(f filter.Filter, host string) filter.Decision {
+	decision := f.Evaluate(host)
+	if f.Mode == filter.None || decision == filter.Block {
+		return decision
+	}
+	if net.ParseIP(host) == nil {
+		return decision
+	}
+	if f.AllowList != nil && f.AllowList.Contains(host) {
+		return filter.Allow
+	}
+	return filter.Block
 }
 
 func clientAddr(conn net.Conn) string {

@@ -45,6 +45,53 @@ func TestListContainsSuffixMatch(t *testing.T) {
 	}
 }
 
+// TestListDoesNotMatchLookalikeDomains guards against a naive suffix check
+// (e.g. strings.HasSuffix(name, entry)) that would let a look-alike domain
+// slip past an allow or deny entry — the classic case being an operator
+// allow-listing "google.com" and an attacker registering "badgoogle.com"
+// or "google.com.evil.com", hoping the raw-string suffix "google.com"
+// tricks a sloppy matcher. Because Contains only matches whole
+// dot-separated labels, neither trick works: a query name is only "under"
+// an entry if it's the entry itself or ends in ".<entry>".
+func TestListDoesNotMatchLookalikeDomains(t *testing.T) {
+	l := loadListFromContent(t, "google.com\nevil.com\n")
+
+	cases := []struct {
+		name string
+		want bool
+		why  string
+	}{
+		{"google.com", true, "the entry itself"},
+		{"mail.google.com", true, "a real subdomain"},
+		{"badgoogle.com", false, "prefix glued onto the entry with no dot boundary"},
+		{"xgoogle.com", false, "single extra character with no dot boundary"},
+		{"googlecom", false, "not even a suffix match at the string level"},
+		{"notgoogle.com", false, "same trick, different filler word"},
+		{"google.com.evil.com", true, "IS a subdomain of the separately-listed evil.com"},
+		{"google.co", false, "different TLD entirely"},
+	}
+	for _, tc := range cases {
+		if got := l.Contains(tc.name); got != tc.want {
+			t.Errorf("Contains(%q) = %v, want %v (%s)", tc.name, got, tc.want, tc.why)
+		}
+	}
+}
+
+func TestFilterEvaluateLookalikeDomainInAllowMode(t *testing.T) {
+	// The Evaluate-level version of the same use case: an operator who
+	// allow-lists "google.com" must not have "badgoogle.com" pass through
+	// as if it were a subdomain.
+	allowList := loadListFromContent(t, "google.com\n")
+	f := Filter{Mode: AllowList, AllowList: allowList}
+
+	if got := f.Evaluate("google.com"); got != Allow {
+		t.Errorf("Evaluate(%q) = %v, want Allow", "google.com", got)
+	}
+	if got := f.Evaluate("badgoogle.com"); got != Block {
+		t.Errorf("Evaluate(%q) = %v, want Block (look-alike of an allow-listed domain)", "badgoogle.com", got)
+	}
+}
+
 func TestListIgnoresBlankLinesAndComments(t *testing.T) {
 	l := loadListFromContent(t, "# comment\n\n  \nexample.com\n   # indented comment\n")
 
