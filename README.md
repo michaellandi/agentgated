@@ -1,5 +1,9 @@
 # agentgated
 
+[![CI](https://github.com/michaellandi/agentgated/actions/workflows/ci.yml/badge.svg)](https://github.com/michaellandi/agentgated/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/badge/go-1.23%2B-00ADD8?logo=go&logoColor=white)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **agentgated** is an egress control daemon for AI agents. It sits between an
 agent's tools and the network, enforcing a single allow/deny hostname policy
 across every path an agent can reach the outside world through: DNS lookups
@@ -44,6 +48,24 @@ through "harmless" DNS lookups or HTTP requests.
 make build
 # binary at ./dist/agentgated
 ```
+
+## Releases
+
+Tagged versions (`vX.Y.Z`) are built automatically by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) into static
+binaries for `linux/amd64`, `linux/arm64`, `darwin/amd64`, and
+`darwin/arm64`, published on the
+[Releases page](https://github.com/michaellandi/agentgated/releases) as
+`agentgated_<version>_<os>_<arch>.tar.gz` alongside a `checksums.txt`.
+
+```bash
+curl -LO https://github.com/michaellandi/agentgated/releases/download/vX.Y.Z/agentgated_vX.Y.Z_linux_amd64.tar.gz
+curl -LO https://github.com/michaellandi/agentgated/releases/download/vX.Y.Z/checksums.txt
+sha256sum -c checksums.txt --ignore-missing
+tar xzf agentgated_vX.Y.Z_linux_amd64.tar.gz
+```
+
+`agentgated -version` prints the build's version.
 
 ## Installing
 

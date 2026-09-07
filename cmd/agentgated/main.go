@@ -18,9 +18,18 @@ import (
 	"github.com/michaellandi/agentgated/internal/proxy"
 )
 
+// version is set at build time via -ldflags "-X main.version=...".
+var version = "dev"
+
 func main() {
 	configPath := flag.String("config", "/etc/agentgated/agentgated.yaml", "path to config file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println("agentgated", version)
+		return
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -64,6 +73,7 @@ func run(configPath string, logger *slog.Logger) error {
 	cp := connectproxy.New(f, logger)
 
 	logger.Info("starting agentgated",
+		"version", version,
 		"dns_listen", cfg.DNSListen,
 		"dns_upstream", cfg.DNSUpstream,
 		"filter_mode", cfg.FilterMode,

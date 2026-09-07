@@ -1,11 +1,12 @@
-BINARY := agentgated
-DIST   := dist
+BINARY  := agentgated
+DIST    := dist
+VERSION ?= dev
 
 .PHONY: build test fmt vet clean install
 
 build:
 	mkdir -p $(DIST)
-	go build -o $(DIST)/$(BINARY) ./cmd/agentgated
+	go build -ldflags "-X main.version=$(VERSION)" -o $(DIST)/$(BINARY) ./cmd/agentgated
 
 test:
 	go test ./...
