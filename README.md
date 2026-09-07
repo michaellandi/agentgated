@@ -4,14 +4,14 @@
 agent's tools and the network, enforcing a single allow/deny hostname policy
 across every path an agent can reach the outside world through: DNS lookups
 and HTTP CONNECT tunnels alike, so an agent that already knows a destination
-IP can't bypass policy by skipping resolution.
+IP can't bypass policy by skipping resolution and data can't be exfiltrated
+through DNS.
 
 Every query and connection is logged (name, type, client, allow/block
 decision, and whether it was served from cache or upstream), which is
 deliberate: this is step one toward using agentgated to spot data
 exfiltration attempts by misbehaving or compromised agents tunneling data out
-through "harmless" DNS lookups or HTTP requests — that detection logic isn't
-built yet, but the query log is the foundation for it.
+through "harmless" DNS lookups or HTTP requests.
 
 ## Features
 
