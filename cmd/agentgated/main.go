@@ -45,19 +45,19 @@ func run(configPath string, logger *slog.Logger) error {
 		logger = slog.New(slog.NewTextHandler(f, nil))
 	}
 
-	blacklist, err := filter.LoadList(cfg.BlacklistFile)
+	allowList, err := filter.LoadList(cfg.AllowListFile)
 	if err != nil {
-		return fmt.Errorf("loading blacklist: %w", err)
+		return fmt.Errorf("loading allow list: %w", err)
 	}
-	whitelist, err := filter.LoadList(cfg.WhitelistFile)
+	denyList, err := filter.LoadList(cfg.DenyListFile)
 	if err != nil {
-		return fmt.Errorf("loading whitelist: %w", err)
+		return fmt.Errorf("loading deny list: %w", err)
 	}
 
 	f := filter.Filter{
 		Mode:      filter.Mode(cfg.FilterMode),
-		Blacklist: blacklist,
-		Whitelist: whitelist,
+		AllowList: allowList,
+		DenyList:  denyList,
 	}
 
 	p := proxy.New(cfg, f, cache.New(cfg.DNSCacheMaxTTL), logger)
@@ -67,8 +67,8 @@ func run(configPath string, logger *slog.Logger) error {
 		"dns_listen", cfg.DNSListen,
 		"dns_upstream", cfg.DNSUpstream,
 		"filter_mode", cfg.FilterMode,
-		"blacklist_entries", blacklist.Len(),
-		"whitelist_entries", whitelist.Len(),
+		"allowlist_entries", allowList.Len(),
+		"denylist_entries", denyList.Len(),
 		"connect_listen", cfg.ConnectListen,
 	)
 

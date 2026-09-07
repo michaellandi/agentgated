@@ -14,21 +14,21 @@ import (
 type FilterMode string
 
 const (
-	FilterNone      FilterMode = "none"
-	FilterWhitelist FilterMode = "whitelist"
-	FilterBlacklist FilterMode = "blacklist"
+	FilterNone  FilterMode = "none"
+	FilterAllow FilterMode = "allow"
+	FilterDeny  FilterMode = "deny"
 )
 
 // Config holds the daemon's runtime configuration. Options scoped to one
 // listener are prefixed accordingly (dns_, connect_); unprefixed options
-// (filter_mode, blacklist_file, whitelist_file, log_path) apply to all of
+// (filter_mode, allowlist_file, denylist_file, log_path) apply to all of
 // them.
 type Config struct {
 	DNSListen      string        `yaml:"dns_listen"`
 	DNSUpstream    string        `yaml:"dns_upstream"`
 	FilterMode     FilterMode    `yaml:"filter_mode"`
-	BlacklistFile  string        `yaml:"blacklist_file"`
-	WhitelistFile  string        `yaml:"whitelist_file"`
+	AllowListFile  string        `yaml:"allowlist_file"`
+	DenyListFile   string        `yaml:"denylist_file"`
 	DNSBlockedIP   string        `yaml:"dns_blocked_ip"`
 	DNSCache       bool          `yaml:"dns_cache"`
 	DNSCacheMaxTTL time.Duration `yaml:"dns_cache_max_ttl"`
@@ -41,9 +41,9 @@ func Default() Config {
 	return Config{
 		DNSListen:      ":53",
 		DNSUpstream:    "1.1.1.1:53",
-		FilterMode:     FilterBlacklist,
-		BlacklistFile:  "/etc/agentgated/blacklist.txt",
-		WhitelistFile:  "/etc/agentgated/whitelist.txt",
+		FilterMode:     FilterDeny,
+		AllowListFile:  "/etc/agentgated/allowlist.txt",
+		DenyListFile:   "/etc/agentgated/denylist.txt",
 		DNSCache:       true,
 		DNSCacheMaxTTL: time.Hour,
 	}
@@ -70,7 +70,7 @@ func Load(path string) (Config, error) {
 // Validate checks that the configuration is internally consistent.
 func (c Config) Validate() error {
 	switch c.FilterMode {
-	case FilterNone, FilterWhitelist, FilterBlacklist:
+	case FilterNone, FilterAllow, FilterDeny:
 	default:
 		return fmt.Errorf("invalid filter_mode %q", c.FilterMode)
 	}

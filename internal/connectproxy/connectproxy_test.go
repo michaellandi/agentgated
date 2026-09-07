@@ -118,16 +118,16 @@ func TestConnectAllowedTunnelsTraffic(t *testing.T) {
 
 func TestConnectBlockedByPolicy(t *testing.T) {
 	dir := t.TempDir()
-	blacklistPath := filepath.Join(dir, "blacklist.txt")
-	if err := os.WriteFile(blacklistPath, []byte("blocked.example.com\n"), 0o644); err != nil {
-		t.Fatalf("write blacklist: %v", err)
+	denylistPath := filepath.Join(dir, "denylist.txt")
+	if err := os.WriteFile(denylistPath, []byte("blocked.example.com\n"), 0o644); err != nil {
+		t.Fatalf("write deny list: %v", err)
 	}
-	blacklist, err := filter.LoadList(blacklistPath)
+	denyList, err := filter.LoadList(denylistPath)
 	if err != nil {
-		t.Fatalf("load blacklist: %v", err)
+		t.Fatalf("load deny list: %v", err)
 	}
 
-	proxyAddr := startProxy(t, filter.Filter{Mode: filter.Blacklist, Blacklist: blacklist})
+	proxyAddr := startProxy(t, filter.Filter{Mode: filter.DenyList, DenyList: denyList})
 
 	_, _, status := connectRequest(t, proxyAddr, "blocked.example.com:443")
 	if status != http.StatusForbidden {

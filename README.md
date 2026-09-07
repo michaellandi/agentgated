@@ -20,7 +20,7 @@ built yet, but the query log is the foundation for it.
 - HTTP CONNECT tunnel proxy — filters by the tunnel's target hostname using
   the same allow/deny list as DNS, then relays bytes opaquely (no TLS
   termination)
-- Static whitelist or blacklist filtering by hostname (suffix-matched, so an
+- Static allow list or deny list filtering by hostname (suffix-matched, so an
   entry also covers its subdomains), shared by both proxies
 - Configurable redirect IP for blocked A queries, or NXDOMAIN
 - In-memory response cache honoring upstream TTLs, capped at a configurable
@@ -57,8 +57,8 @@ to `/etc/systemd/system/agentgated.service`. Then set up config:
 ```bash
 sudo mkdir -p /etc/agentgated
 sudo cp configs/agentgated.yaml.example /etc/agentgated/agentgated.yaml
-sudo cp configs/blacklist.txt.example /etc/agentgated/blacklist.txt
-sudo cp configs/whitelist.txt.example /etc/agentgated/whitelist.txt
+sudo cp configs/allowlist.txt.example /etc/agentgated/allowlist.txt
+sudo cp configs/denylist.txt.example /etc/agentgated/denylist.txt
 sudo systemctl daemon-reload
 sudo systemctl enable --now agentgated
 ```
@@ -74,9 +74,9 @@ options:
 |---|---|---|
 | `dns_listen` | `:53` | Address to listen on for DNS (UDP and TCP) |
 | `dns_upstream` | `1.1.1.1:53` | Upstream resolver for permitted DNS queries |
-| `filter_mode` | `blacklist` | `none`, `whitelist`, or `blacklist` — applied to both DNS and CONNECT |
-| `blacklist_file` | `/etc/agentgated/blacklist.txt` | Hostnames to block, one per line |
-| `whitelist_file` | `/etc/agentgated/whitelist.txt` | Hostnames to allow, one per line |
+| `filter_mode` | `deny` | `none`, `allow`, or `deny` — applied to both DNS and CONNECT |
+| `allowlist_file` | `/etc/agentgated/allowlist.txt` | Hostnames to allow, one per line |
+| `denylist_file` | `/etc/agentgated/denylist.txt` | Hostnames to block, one per line |
 | `dns_blocked_ip` | *(empty)* | IP to answer with for a blocked `A` query; empty means NXDOMAIN |
 | `dns_cache` | `true` | Enable in-memory DNS response caching |
 | `dns_cache_max_ttl` | `1h` | Upper bound on cached DNS entry lifetime |

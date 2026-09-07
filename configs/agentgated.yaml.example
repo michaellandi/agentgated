@@ -8,13 +8,13 @@ dns_listen: ":53"
 dns_upstream: "1.1.1.1:53"
 
 # Filtering mode, applied to both DNS queries and CONNECT targets:
-# none | whitelist | blacklist
-filter_mode: blacklist
+# none | allow | deny
+filter_mode: deny
 
 # One hostname per line; a suffix match (e.g. "example.com" also matches
 # "sub.example.com"). Only the file for the active filter_mode is used.
-blacklist_file: /etc/agentgated/blacklist.txt
-whitelist_file: /etc/agentgated/whitelist.txt
+allowlist_file: /etc/agentgated/allowlist.txt
+denylist_file: /etc/agentgated/denylist.txt
 
 # IP to answer with for a blocked DNS A query. Leave empty to respond
 # NXDOMAIN instead (used for all blocked non-A queries regardless of this

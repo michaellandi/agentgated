@@ -15,8 +15,8 @@ type Mode string
 
 const (
 	None      Mode = "none"
-	Whitelist Mode = "whitelist"
-	Blacklist Mode = "blacklist"
+	AllowList Mode = "allow"
+	DenyList  Mode = "deny"
 )
 
 // Decision is the outcome of evaluating a query name against a Filter.
@@ -95,20 +95,20 @@ func (l *List) Len() int {
 // Filter evaluates query names against the configured mode and lists.
 type Filter struct {
 	Mode      Mode
-	Blacklist *List
-	Whitelist *List
+	DenyList  *List
+	AllowList *List
 }
 
 // Evaluate returns Allow or Block for name according to f.Mode.
 func (f Filter) Evaluate(name string) Decision {
 	switch f.Mode {
-	case Whitelist:
-		if f.Whitelist != nil && f.Whitelist.Contains(name) {
+	case AllowList:
+		if f.AllowList != nil && f.AllowList.Contains(name) {
 			return Allow
 		}
 		return Block
-	case Blacklist:
-		if f.Blacklist != nil && f.Blacklist.Contains(name) {
+	case DenyList:
+		if f.DenyList != nil && f.DenyList.Contains(name) {
 			return Block
 		}
 		return Allow
