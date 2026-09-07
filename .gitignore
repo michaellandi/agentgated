@@ -1,1 +1,16 @@
 /dist/
+
+# Go
+*.test
+*.out
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+
+# Local env / secrets
+.env
+.env.local
