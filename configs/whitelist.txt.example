@@ -1,0 +1,4 @@
+# One hostname per line. A suffix match: "example.com" also allows
+# any subdomain of example.com. Lines starting with '#' are ignored.
+example.com
+api.anthropic.com

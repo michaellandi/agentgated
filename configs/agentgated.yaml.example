@@ -1,0 +1,34 @@
+# agentgated configuration
+# Copy to /etc/agentgated/agentgated.yaml and edit.
+
+# Address to listen on for DNS queries (UDP and TCP).
+listen: ":53"
+
+# Upstream resolver to forward permitted queries to.
+upstream: "1.1.1.1:53"
+
+# Filtering mode: none | whitelist | blacklist
+filter_mode: blacklist
+
+# One hostname per line; a suffix match (e.g. "example.com" also matches
+# "sub.example.com"). Only the file for the active filter_mode is used.
+blacklist_file: /etc/agentgated/blacklist.txt
+whitelist_file: /etc/agentgated/whitelist.txt
+
+# IP to answer with for a blocked A query. Leave empty to respond NXDOMAIN
+# instead (used for all blocked non-A queries regardless of this setting).
+blocked_ip: "0.0.0.0"
+
+# Cache upstream responses in memory, honoring response TTLs up to
+# cache_max_ttl.
+cache: true
+cache_max_ttl: 1h
+
+# Path to a log file. Leave empty to log to stdout.
+log_path: ""
+
+# Address to listen on for the HTTP CONNECT proxy, e.g. ":3128". Leave empty
+# to disable it. Point an agent's HTTP_PROXY/HTTPS_PROXY at this address to
+# enforce the same filter_mode allow/deny policy on the connections it
+# actually opens, not just the DNS lookups it makes first.
+connect_listen: ""

@@ -1,0 +1,4 @@
+# One hostname per line. A suffix match: "example.com" also blocks
+# any subdomain of example.com. Lines starting with '#' are ignored.
+badhost.example.com
+tracker.example.net
