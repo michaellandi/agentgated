@@ -26,6 +26,9 @@ through "harmless" DNS lookups or HTTP requests.
   termination)
 - Static allow list or deny list filtering by hostname (suffix-matched, so an
   entry also covers its subdomains), shared by both proxies
+- Optional multi-tenant mode: resolve each request's allow/deny list from a
+  URL template (e.g. keyed by client IP), fetched and refreshed in the
+  background with fail-safe fallback to the last-known-good list
 - Configurable redirect IP for blocked A queries, or NXDOMAIN
 - In-memory response cache honoring upstream TTLs, capped at a configurable
   maximum
@@ -104,9 +107,52 @@ options:
 | `dns_cache_max_ttl` | `1h` | Upper bound on cached DNS entry lifetime |
 | `log_path` | *(empty)* | Log file path; empty logs to stdout |
 | `connect_listen` | *(empty)* | Address for the HTTP CONNECT proxy, e.g. `:3128`; empty disables it |
+| `allowlist_url_template` | *(empty)* | URL template to resolve a per-request allow list from; see [Multi-tenant policy resolution](#multi-tenant-policy-resolution) |
+| `denylist_url_template` | *(empty)* | URL template to resolve a per-request deny list from; see [Multi-tenant policy resolution](#multi-tenant-policy-resolution) |
+| `policy_refresh_interval` | `5m` | How often a resolved policy URL is re-fetched |
+| `policy_fetch_timeout` | `10s` | Timeout for a single policy fetch |
 
-Restart the daemon after changing config or list files — they're read once
-at startup.
+Restart the daemon after changing config, `allowlist_file`, or
+`denylist_file` — those are read once at startup. Lists resolved via
+`allowlist_url_template`/`denylist_url_template` refresh themselves on
+`policy_refresh_interval` without a restart.
+
+## Multi-tenant policy resolution
+
+Setting `allowlist_url_template` and/or `denylist_url_template` turns
+agentgated into a multi-tenant system: instead of one fixed list, the URL to
+fetch a request's allow/deny list from is built per-request by substituting
+placeholders into the template. Two placeholders are supported:
+
+- `{ip}` — the client's source IP. Works for both DNS and CONNECT.
+- `{header.Name}` — the value of HTTP header `Name` on a CONNECT request. A
+  DNS query has no headers, so a template that uses this placeholder can
+  never resolve for DNS traffic — see the fallback behavior below.
+
+```yaml
+allowlist_url_template: "https://policy.internal/tenants/{ip}/allow.txt"
+denylist_url_template:  "https://policy.internal/tenants/{ip}/deny.txt"
+```
+
+Resolved lists are fetched once on first use, cached, and refreshed every
+`policy_refresh_interval`. If a refresh fails, agentgated keeps serving the
+last successfully fetched list rather than clearing it or failing the
+request. If a template can't be resolved for a given request (e.g. a
+`{header.*}` placeholder on a DNS query, or a missing header), or its first
+fetch fails before anything is cached, agentgated falls back to the static
+`allowlist_file`/`denylist_file` for that request.
+
+**Security note:** agentgated substitutes these values into a URL — it does
+not authenticate them. A bare `{header.*}` placeholder is only as trustworthy
+as your network is at preventing a client from setting that header itself;
+an agent that can set its own headers on its own CONNECT requests can set
+that header to whatever it wants. `{ip}` is a stronger signal in topologies
+where each tenant genuinely has its own unspoofable source IP, but is not
+sufficient behind a shared NAT/gateway. Ensuring the identifying value can't
+be spoofed for your topology (e.g. verifying a real `Proxy-Authorization`
+credential upstream before a header is ever trusted, or enforcing one IP per
+tenant at the network level) is the deploying admin/architect's
+responsibility.
 
 ## Running locally
 

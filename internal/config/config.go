@@ -34,18 +34,32 @@ type Config struct {
 	DNSCacheMaxTTL time.Duration `yaml:"dns_cache_max_ttl"`
 	LogPath        string        `yaml:"log_path"`
 	ConnectListen  string        `yaml:"connect_listen"`
+
+	// AllowListURLTemplate and DenyListURLTemplate, when set, resolve a
+	// per-request policy source URL instead of using the static list
+	// files above. Supported placeholders: {ip} (client source IP) and
+	// {header.Name} (an HTTP header value; CONNECT requests only — DNS
+	// has no headers). agentgated does not authenticate the values it
+	// substitutes; ensuring they can't be spoofed is the deploying
+	// admin's responsibility.
+	AllowListURLTemplate  string        `yaml:"allowlist_url_template"`
+	DenyListURLTemplate   string        `yaml:"denylist_url_template"`
+	PolicyRefreshInterval time.Duration `yaml:"policy_refresh_interval"`
+	PolicyFetchTimeout    time.Duration `yaml:"policy_fetch_timeout"`
 }
 
 // Default returns the configuration used for any fields a loaded file omits.
 func Default() Config {
 	return Config{
-		DNSListen:      ":53",
-		DNSUpstream:    "1.1.1.1:53",
-		FilterMode:     FilterDeny,
-		AllowListFile:  "/etc/agentgated/allowlist.txt",
-		DenyListFile:   "/etc/agentgated/denylist.txt",
-		DNSCache:       true,
-		DNSCacheMaxTTL: time.Hour,
+		DNSListen:             ":53",
+		DNSUpstream:           "1.1.1.1:53",
+		FilterMode:            FilterDeny,
+		AllowListFile:         "/etc/agentgated/allowlist.txt",
+		DenyListFile:          "/etc/agentgated/denylist.txt",
+		DNSCache:              true,
+		DNSCacheMaxTTL:        time.Hour,
+		PolicyRefreshInterval: 5 * time.Minute,
+		PolicyFetchTimeout:    10 * time.Second,
 	}
 }
 

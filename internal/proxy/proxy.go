@@ -3,6 +3,7 @@
 package proxy
 
 import (
+	"context"
 	"log/slog"
 	"net"
 	"time"
@@ -12,22 +13,23 @@ import (
 	"github.com/michaellandi/agentgated/internal/cache"
 	"github.com/michaellandi/agentgated/internal/config"
 	"github.com/michaellandi/agentgated/internal/filter"
+	"github.com/michaellandi/agentgated/internal/tenant"
 )
 
 // Proxy is a dns.Handler that filters, caches, and forwards queries.
 type Proxy struct {
 	cfg      config.Config
-	filter   filter.Filter
+	resolver tenant.Resolver
 	cache    *cache.Cache
 	upstream *dns.Client
 	logger   *slog.Logger
 }
 
 // New builds a Proxy from its dependencies.
-func New(cfg config.Config, f filter.Filter, c *cache.Cache, logger *slog.Logger) *Proxy {
+func New(cfg config.Config, r tenant.Resolver, c *cache.Cache, logger *slog.Logger) *Proxy {
 	return &Proxy{
 		cfg:      cfg,
-		filter:   f,
+		resolver: r,
 		cache:    c,
 		upstream: &dns.Client{Timeout: 5 * time.Second},
 		logger:   logger,
@@ -47,8 +49,9 @@ func (p *Proxy) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	q := r.Question[0]
 	client := clientAddr(w)
+	f := p.resolver.Resolve(context.Background(), tenant.Request{IP: client})
 
-	if p.filter.Evaluate(q.Name) == filter.Block {
+	if f.Evaluate(q.Name) == filter.Block {
 		p.respondBlocked(w, resp, q, client, start)
 		return
 	}

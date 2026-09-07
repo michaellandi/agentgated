@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/michaellandi/agentgated/internal/connectproxy"
 	"github.com/michaellandi/agentgated/internal/filter"
 	"github.com/michaellandi/agentgated/internal/proxy"
+	"github.com/michaellandi/agentgated/internal/tenant"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -69,8 +71,13 @@ func run(configPath string, logger *slog.Logger) error {
 		DenyList:  denyList,
 	}
 
-	p := proxy.New(cfg, f, cache.New(cfg.DNSCacheMaxTTL), logger)
-	cp := connectproxy.New(f, logger)
+	resolver, err := buildResolver(cfg, f, logger)
+	if err != nil {
+		return fmt.Errorf("configuring policy resolver: %w", err)
+	}
+
+	p := proxy.New(cfg, resolver, cache.New(cfg.DNSCacheMaxTTL), logger)
+	cp := connectproxy.New(resolver, logger)
 
 	logger.Info("starting agentgated",
 		"version", version,
@@ -80,6 +87,7 @@ func run(configPath string, logger *slog.Logger) error {
 		"allowlist_entries", allowList.Len(),
 		"denylist_entries", denyList.Len(),
 		"connect_listen", cfg.ConnectListen,
+		"multi_tenant", cfg.AllowListURLTemplate != "" || cfg.DenyListURLTemplate != "",
 	)
 
 	handler := dns.HandlerFunc(p.ServeDNS)
@@ -94,4 +102,37 @@ func run(configPath string, logger *slog.Logger) error {
 	}
 
 	return <-errCh
+}
+
+// buildResolver returns a StaticResolver using fallback directly when
+// neither URL template is configured, or a DynamicResolver that fetches
+// per-tenant lists (falling back to fallback) otherwise.
+func buildResolver(cfg config.Config, fallback filter.Filter, logger *slog.Logger) (tenant.Resolver, error) {
+	if cfg.AllowListURLTemplate == "" && cfg.DenyListURLTemplate == "" {
+		return tenant.StaticResolver{Filter: fallback}, nil
+	}
+
+	var allowTemplate, denyTemplate *tenant.Template
+	if cfg.AllowListURLTemplate != "" {
+		t, err := tenant.ParseTemplate(cfg.AllowListURLTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("parsing allowlist_url_template: %w", err)
+		}
+		allowTemplate = t
+	}
+	if cfg.DenyListURLTemplate != "" {
+		t, err := tenant.ParseTemplate(cfg.DenyListURLTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("parsing denylist_url_template: %w", err)
+		}
+		denyTemplate = t
+	}
+
+	return tenant.NewDynamicResolver(
+		context.Background(),
+		allowTemplate, denyTemplate,
+		fallback,
+		cfg.PolicyFetchTimeout, cfg.PolicyRefreshInterval,
+		logger,
+	), nil
 }

@@ -13,8 +13,35 @@ filter_mode: deny
 
 # One hostname per line; a suffix match (e.g. "example.com" also matches
 # "sub.example.com"). Only the file for the active filter_mode is used.
+# These are also the fallback lists used when allowlist_url_template /
+# denylist_url_template (below) are set but can't be resolved or fetched
+# for a given request.
 allowlist_file: /etc/agentgated/allowlist.txt
 denylist_file: /etc/agentgated/denylist.txt
+
+# Optional: resolve the allow/deny list source per request from a URL
+# template instead of (or as a fallback source for) the static files
+# above — for running agentgated as a multi-tenant system where different
+# clients get different policies. Supported placeholders:
+#   {ip}          - client source IP (DNS and CONNECT)
+#   {header.Name} - value of HTTP header "Name" (CONNECT only; a DNS query
+#                   has no headers, so a template using this placeholder
+#                   will fall back to allowlist_file/denylist_file for DNS
+#                   traffic)
+# Substituted values are URL-escaped, but NOT authenticated — agentgated
+# does not verify that an IP or header value is genuine. If you use
+# {header.*}, it is your responsibility as the deploying admin/architect to
+# ensure that header can't be spoofed (e.g. verify a Proxy-Authorization
+# credential upstream of trusting it) before it reaches agentgated.
+# Leave both empty to use only the static files above (the default).
+allowlist_url_template: ""
+denylist_url_template: ""
+
+# How often a resolved policy URL is re-fetched, and the timeout for a
+# single fetch. A failed fetch keeps serving the last successfully fetched
+# list rather than blocking or clearing it.
+policy_refresh_interval: 5m
+policy_fetch_timeout: 10s
 
 # IP to answer with for a blocked DNS A query. Leave empty to respond
 # NXDOMAIN instead (used for all blocked non-A queries regardless of this

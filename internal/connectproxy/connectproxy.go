@@ -8,6 +8,7 @@ package connectproxy
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/michaellandi/agentgated/internal/filter"
+	"github.com/michaellandi/agentgated/internal/tenant"
 )
 
 const (
@@ -26,13 +28,13 @@ const (
 // Proxy is an HTTP CONNECT tunnel proxy that filters targets and relays
 // permitted connections.
 type Proxy struct {
-	filter filter.Filter
-	logger *slog.Logger
+	resolver tenant.Resolver
+	logger   *slog.Logger
 }
 
 // New builds a Proxy from its dependencies.
-func New(f filter.Filter, logger *slog.Logger) *Proxy {
-	return &Proxy{filter: f, logger: logger}
+func New(r tenant.Resolver, logger *slog.Logger) *Proxy {
+	return &Proxy{resolver: r, logger: logger}
 }
 
 // ListenAndServe listens for TCP connections on addr and serves them until
@@ -82,7 +84,8 @@ func (p *Proxy) handle(conn net.Conn) {
 		return
 	}
 
-	if p.filter.Evaluate(host) == filter.Block {
+	f := p.resolver.Resolve(context.Background(), tenant.Request{IP: client, Header: req.Header})
+	if f.Evaluate(host) == filter.Block {
 		respond(conn, http.StatusForbidden, "host blocked by policy")
 		p.log(client, req.Method, req.Host, "block", "policy", start)
 		return

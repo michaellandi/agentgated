@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/michaellandi/agentgated/internal/filter"
+	"github.com/michaellandi/agentgated/internal/tenant"
 )
 
 func testLogger() *slog.Logger {
@@ -30,7 +31,7 @@ func startProxy(t *testing.T, f filter.Filter) string {
 	}
 	t.Cleanup(func() { ln.Close() })
 
-	p := New(f, testLogger())
+	p := New(tenant.StaticResolver{Filter: f}, testLogger())
 	go p.Serve(ln)
 	return ln.Addr().String()
 }

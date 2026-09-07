@@ -5,6 +5,7 @@ package filter
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"sync"
@@ -37,9 +38,8 @@ type List struct {
 // LoadList reads one hostname per line from path. Blank lines and lines
 // starting with '#' are ignored. An empty path yields an empty, valid list.
 func LoadList(path string) (*List, error) {
-	l := &List{entries: make(map[string]struct{})}
 	if path == "" {
-		return l, nil
+		return &List{entries: make(map[string]struct{})}, nil
 	}
 
 	f, err := os.Open(path)
@@ -48,7 +48,20 @@ func LoadList(path string) (*List, error) {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
+	l, err := ParseList(f)
+	if err != nil {
+		return nil, fmt.Errorf("reading list %s: %w", path, err)
+	}
+	return l, nil
+}
+
+// ParseList reads one hostname per line from r. Blank lines and lines
+// starting with '#' are ignored. Used for both local list files and lists
+// fetched from a remote source, so the two stay in the same format.
+func ParseList(r io.Reader) (*List, error) {
+	l := &List{entries: make(map[string]struct{})}
+
+	scanner := bufio.NewScanner(r)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -57,7 +70,7 @@ func LoadList(path string) (*List, error) {
 		l.entries[normalize(line)] = struct{}{}
 	}
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("reading list %s: %w", path, err)
+		return nil, err
 	}
 	return l, nil
 }
