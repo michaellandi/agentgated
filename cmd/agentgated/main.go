@@ -60,12 +60,12 @@ func run(configPath string, logger *slog.Logger) error {
 		Whitelist: whitelist,
 	}
 
-	p := proxy.New(cfg, f, cache.New(cfg.CacheMaxTTL), logger)
+	p := proxy.New(cfg, f, cache.New(cfg.DNSCacheMaxTTL), logger)
 	cp := connectproxy.New(f, logger)
 
 	logger.Info("starting agentgated",
-		"listen", cfg.Listen,
-		"upstream", cfg.Upstream,
+		"dns_listen", cfg.DNSListen,
+		"dns_upstream", cfg.DNSUpstream,
 		"filter_mode", cfg.FilterMode,
 		"blacklist_entries", blacklist.Len(),
 		"whitelist_entries", whitelist.Len(),
@@ -73,8 +73,8 @@ func run(configPath string, logger *slog.Logger) error {
 	)
 
 	handler := dns.HandlerFunc(p.ServeDNS)
-	udpServer := &dns.Server{Addr: cfg.Listen, Net: "udp", Handler: handler}
-	tcpServer := &dns.Server{Addr: cfg.Listen, Net: "tcp", Handler: handler}
+	udpServer := &dns.Server{Addr: cfg.DNSListen, Net: "udp", Handler: handler}
+	tcpServer := &dns.Server{Addr: cfg.DNSListen, Net: "tcp", Handler: handler}
 
 	errCh := make(chan error, 3)
 	go func() { errCh <- udpServer.ListenAndServe() }()

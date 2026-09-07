@@ -72,14 +72,14 @@ options:
 
 | Option | Default | Description |
 |---|---|---|
-| `listen` | `:53` | Address to listen on (UDP and TCP) |
-| `upstream` | `1.1.1.1:53` | Upstream resolver for permitted queries |
-| `filter_mode` | `blacklist` | `none`, `whitelist`, or `blacklist` |
+| `dns_listen` | `:53` | Address to listen on for DNS (UDP and TCP) |
+| `dns_upstream` | `1.1.1.1:53` | Upstream resolver for permitted DNS queries |
+| `filter_mode` | `blacklist` | `none`, `whitelist`, or `blacklist` — applied to both DNS and CONNECT |
 | `blacklist_file` | `/etc/agentgated/blacklist.txt` | Hostnames to block, one per line |
 | `whitelist_file` | `/etc/agentgated/whitelist.txt` | Hostnames to allow, one per line |
-| `blocked_ip` | *(empty)* | IP to answer with for a blocked `A` query; empty means NXDOMAIN |
-| `cache` | `true` | Enable in-memory response caching |
-| `cache_max_ttl` | `1h` | Upper bound on cached entry lifetime |
+| `dns_blocked_ip` | *(empty)* | IP to answer with for a blocked `A` query; empty means NXDOMAIN |
+| `dns_cache` | `true` | Enable in-memory DNS response caching |
+| `dns_cache_max_ttl` | `1h` | Upper bound on cached DNS entry lifetime |
 | `log_path` | *(empty)* | Log file path; empty logs to stdout |
 | `connect_listen` | *(empty)* | Address for the HTTP CONNECT proxy, e.g. `:3128`; empty disables it |
 
@@ -90,11 +90,11 @@ at startup.
 
 ```bash
 go run ./cmd/agentgated -config ./configs/agentgated.yaml
-dig @127.0.0.1 -p 5353 example.com   # if listen: ":5353" in your config
+dig @127.0.0.1 -p 5353 example.com   # if dns_listen: ":5353" in your config
 ```
 
 Binding to port 53 requires root; for local testing without `sudo`, set
-`listen: "127.0.0.1:5353"` in your config.
+`dns_listen: "127.0.0.1:5353"` in your config.
 
 To test the CONNECT proxy, set `connect_listen: "127.0.0.1:3128"` and:
 

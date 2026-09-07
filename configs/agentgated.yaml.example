@@ -2,12 +2,13 @@
 # Copy to /etc/agentgated/agentgated.yaml and edit.
 
 # Address to listen on for DNS queries (UDP and TCP).
-listen: ":53"
+dns_listen: ":53"
 
-# Upstream resolver to forward permitted queries to.
-upstream: "1.1.1.1:53"
+# Upstream resolver to forward permitted DNS queries to.
+dns_upstream: "1.1.1.1:53"
 
-# Filtering mode: none | whitelist | blacklist
+# Filtering mode, applied to both DNS queries and CONNECT targets:
+# none | whitelist | blacklist
 filter_mode: blacklist
 
 # One hostname per line; a suffix match (e.g. "example.com" also matches
@@ -15,14 +16,16 @@ filter_mode: blacklist
 blacklist_file: /etc/agentgated/blacklist.txt
 whitelist_file: /etc/agentgated/whitelist.txt
 
-# IP to answer with for a blocked A query. Leave empty to respond NXDOMAIN
-# instead (used for all blocked non-A queries regardless of this setting).
-blocked_ip: "0.0.0.0"
+# IP to answer with for a blocked DNS A query. Leave empty to respond
+# NXDOMAIN instead (used for all blocked non-A queries regardless of this
+# setting). Blocked CONNECT tunnels always get an HTTP 403 — there's no
+# redirect equivalent for a tunnel.
+dns_blocked_ip: "0.0.0.0"
 
-# Cache upstream responses in memory, honoring response TTLs up to
-# cache_max_ttl.
-cache: true
-cache_max_ttl: 1h
+# Cache upstream DNS responses in memory, honoring response TTLs up to
+# dns_cache_max_ttl.
+dns_cache: true
+dns_cache_max_ttl: 1h
 
 # Path to a log file. Leave empty to log to stdout.
 log_path: ""

@@ -19,30 +19,33 @@ const (
 	FilterBlacklist FilterMode = "blacklist"
 )
 
-// Config holds the daemon's runtime configuration.
+// Config holds the daemon's runtime configuration. Options scoped to one
+// listener are prefixed accordingly (dns_, connect_); unprefixed options
+// (filter_mode, blacklist_file, whitelist_file, log_path) apply to all of
+// them.
 type Config struct {
-	Listen        string        `yaml:"listen"`
-	Upstream      string        `yaml:"upstream"`
-	FilterMode    FilterMode    `yaml:"filter_mode"`
-	BlacklistFile string        `yaml:"blacklist_file"`
-	WhitelistFile string        `yaml:"whitelist_file"`
-	BlockedIP     string        `yaml:"blocked_ip"`
-	Cache         bool          `yaml:"cache"`
-	CacheMaxTTL   time.Duration `yaml:"cache_max_ttl"`
-	LogPath       string        `yaml:"log_path"`
-	ConnectListen string        `yaml:"connect_listen"`
+	DNSListen      string        `yaml:"dns_listen"`
+	DNSUpstream    string        `yaml:"dns_upstream"`
+	FilterMode     FilterMode    `yaml:"filter_mode"`
+	BlacklistFile  string        `yaml:"blacklist_file"`
+	WhitelistFile  string        `yaml:"whitelist_file"`
+	DNSBlockedIP   string        `yaml:"dns_blocked_ip"`
+	DNSCache       bool          `yaml:"dns_cache"`
+	DNSCacheMaxTTL time.Duration `yaml:"dns_cache_max_ttl"`
+	LogPath        string        `yaml:"log_path"`
+	ConnectListen  string        `yaml:"connect_listen"`
 }
 
 // Default returns the configuration used for any fields a loaded file omits.
 func Default() Config {
 	return Config{
-		Listen:        ":53",
-		Upstream:      "1.1.1.1:53",
-		FilterMode:    FilterBlacklist,
-		BlacklistFile: "/etc/agentgated/blacklist.txt",
-		WhitelistFile: "/etc/agentgated/whitelist.txt",
-		Cache:         true,
-		CacheMaxTTL:   time.Hour,
+		DNSListen:      ":53",
+		DNSUpstream:    "1.1.1.1:53",
+		FilterMode:     FilterBlacklist,
+		BlacklistFile:  "/etc/agentgated/blacklist.txt",
+		WhitelistFile:  "/etc/agentgated/whitelist.txt",
+		DNSCache:       true,
+		DNSCacheMaxTTL: time.Hour,
 	}
 }
 
@@ -71,14 +74,14 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("invalid filter_mode %q", c.FilterMode)
 	}
-	if c.BlockedIP != "" && net.ParseIP(c.BlockedIP) == nil {
-		return fmt.Errorf("invalid blocked_ip %q", c.BlockedIP)
+	if c.DNSBlockedIP != "" && net.ParseIP(c.DNSBlockedIP) == nil {
+		return fmt.Errorf("invalid dns_blocked_ip %q", c.DNSBlockedIP)
 	}
-	if c.Listen == "" {
-		return fmt.Errorf("listen must not be empty")
+	if c.DNSListen == "" {
+		return fmt.Errorf("dns_listen must not be empty")
 	}
-	if c.Upstream == "" {
-		return fmt.Errorf("upstream must not be empty")
+	if c.DNSUpstream == "" {
+		return fmt.Errorf("dns_upstream must not be empty")
 	}
 	return nil
 }

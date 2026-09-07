@@ -53,7 +53,7 @@ func (p *Proxy) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if p.cfg.Cache {
+	if p.cfg.DNSCache {
 		if cached, ok := p.cache.Get(q); ok {
 			cached.Id = r.Id
 			p.write(w, cached)
@@ -62,7 +62,7 @@ func (p *Proxy) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
-	upstreamResp, _, err := p.upstream.Exchange(r, p.cfg.Upstream)
+	upstreamResp, _, err := p.upstream.Exchange(r, p.cfg.DNSUpstream)
 	if err != nil {
 		resp.Rcode = dns.RcodeServerFailure
 		p.write(w, resp)
@@ -70,7 +70,7 @@ func (p *Proxy) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if p.cfg.Cache {
+	if p.cfg.DNSCache {
 		p.cache.Set(q, upstreamResp)
 	}
 	p.write(w, upstreamResp)
@@ -78,7 +78,7 @@ func (p *Proxy) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 func (p *Proxy) respondBlocked(w dns.ResponseWriter, resp *dns.Msg, q dns.Question, client string, start time.Time) {
-	if p.cfg.BlockedIP == "" || q.Qtype != dns.TypeA {
+	if p.cfg.DNSBlockedIP == "" || q.Qtype != dns.TypeA {
 		resp.Rcode = dns.RcodeNameError
 		p.write(w, resp)
 		p.log(q, client, "block", "nxdomain", start, nil)
@@ -86,7 +86,7 @@ func (p *Proxy) respondBlocked(w dns.ResponseWriter, resp *dns.Msg, q dns.Questi
 	}
 	resp.Answer = append(resp.Answer, &dns.A{
 		Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
-		A:   net.ParseIP(p.cfg.BlockedIP),
+		A:   net.ParseIP(p.cfg.DNSBlockedIP),
 	})
 	p.write(w, resp)
 	p.log(q, client, "block", "redirect", start, nil)
