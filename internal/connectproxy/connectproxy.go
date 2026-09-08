@@ -30,11 +30,25 @@ const (
 type Proxy struct {
 	resolver tenant.Resolver
 	logger   *slog.Logger
+
+	// allowedPorts restricts CONNECT target ports; empty means unrestricted.
+	allowedPorts map[string]struct{}
+
+	// denyList always blocks a matching host, regardless of tenant policy
+	// or filter mode. See ConnectDenyListFile in internal/config.
+	denyList *filter.List
 }
 
-// New builds a Proxy from its dependencies.
-func New(r tenant.Resolver, logger *slog.Logger) *Proxy {
-	return &Proxy{resolver: r, logger: logger}
+// New builds a Proxy from its dependencies. allowedPorts restricts which
+// CONNECT target ports are permitted (empty means unrestricted); denyList,
+// if non-nil, always blocks a matching host regardless of what the
+// resolved tenant policy allows.
+func New(r tenant.Resolver, logger *slog.Logger, allowedPorts []string, denyList *filter.List) *Proxy {
+	ports := make(map[string]struct{}, len(allowedPorts))
+	for _, p := range allowedPorts {
+		ports[p] = struct{}{}
+	}
+	return &Proxy{resolver: r, logger: logger, allowedPorts: ports, denyList: denyList}
 }
 
 // ListenAndServe listens for TCP connections on addr and serves them until
@@ -77,17 +91,29 @@ func (p *Proxy) handle(conn net.Conn) {
 		return
 	}
 
-	host, _, err := net.SplitHostPort(req.Host)
+	host, port, err := net.SplitHostPort(req.Host)
 	if err != nil {
 		respond(conn, http.StatusBadRequest, "malformed CONNECT target")
 		p.log(client, req.Method, req.Host, "reject", "bad_target", start)
 		return
 	}
 
+	if len(p.allowedPorts) > 0 {
+		if _, ok := p.allowedPorts[port]; !ok {
+			respond(conn, http.StatusForbidden, "port not permitted")
+			p.log(client, req.Method, req.Host, "reject", "port_not_allowed", start)
+			return
+		}
+	}
+
 	f := p.resolver.Resolve(context.Background(), tenant.Request{IP: client, Header: req.Header})
-	if evaluate(f, host) == filter.Block {
+	decision, reason := evaluate(f, host), "policy"
+	if decision != filter.Block && p.denyList != nil && p.denyList.Contains(host) {
+		decision, reason = filter.Block, "connect_denylist"
+	}
+	if decision == filter.Block {
 		respond(conn, http.StatusForbidden, "host blocked by policy")
-		p.log(client, req.Method, req.Host, "block", "policy", start)
+		p.log(client, req.Method, req.Host, "block", reason, start)
 		return
 	}
 

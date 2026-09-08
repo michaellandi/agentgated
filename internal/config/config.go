@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -35,6 +36,25 @@ type Config struct {
 	LogPath        string        `yaml:"log_path"`
 	ConnectListen  string        `yaml:"connect_listen"`
 
+	// ConnectAllowedPorts restricts which ports a CONNECT target may use,
+	// independent of the hostname policy. A CONNECT tunnel isn't inspected
+	// once permitted, so an allowed hostname would otherwise be reachable
+	// on any port — including a DNS-over-TLS (853) or DNS-over-HTTPS (443,
+	// same port as normal HTTPS) resolver, letting an agent tunnel DNS
+	// queries for arbitrary domains completely outside this proxy's own
+	// filtering. Empty means unrestricted.
+	ConnectAllowedPorts []string `yaml:"connect_allowed_ports"`
+
+	// ConnectDenyListFile is a hostname list (same format as denylist_file)
+	// that always blocks a CONNECT target, regardless of filter_mode or
+	// AllowListURLTemplate/DenyListURLTemplate policy — including in
+	// filter_mode: none. It exists to hold known DNS-over-HTTPS/DNS-over-
+	// TLS resolver hostnames: even a fully trusted allow-listed host must
+	// not become a channel for resolving/exfiltrating data via names this
+	// proxy never sees. Edit the file directly to change what it blocks;
+	// there is no separate override list. Empty path disables it.
+	ConnectDenyListFile string `yaml:"connect_denylist_file"`
+
 	// AllowListURLTemplate and DenyListURLTemplate, when set, resolve a
 	// per-request policy source URL instead of using the static list
 	// files above. Supported placeholders: {ip} (client source IP) and
@@ -60,6 +80,8 @@ func Default() Config {
 		DNSCacheMaxTTL:        time.Hour,
 		PolicyRefreshInterval: 5 * time.Minute,
 		PolicyFetchTimeout:    10 * time.Second,
+		ConnectAllowedPorts:   []string{"443"},
+		ConnectDenyListFile:   "/etc/agentgated/connect-denylist.txt",
 	}
 }
 
@@ -96,6 +118,12 @@ func (c Config) Validate() error {
 	}
 	if c.DNSUpstream == "" {
 		return fmt.Errorf("dns_upstream must not be empty")
+	}
+	for _, p := range c.ConnectAllowedPorts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("invalid connect_allowed_ports entry %q", p)
+		}
 	}
 	return nil
 }

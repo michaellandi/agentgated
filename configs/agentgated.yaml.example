@@ -62,3 +62,16 @@ log_path: ""
 # enforce the same filter_mode allow/deny policy on the connections it
 # actually opens, not just the DNS lookups it makes first.
 connect_listen: ""
+
+# Ports a CONNECT target may use. A permitted tunnel's contents aren't
+# inspected, so leaving this unrestricted means an allowed hostname is
+# reachable on any port. Empty list means unrestricted.
+connect_allowed_ports: ["443"]
+
+# Hostname list (same format as denylist_file) that always blocks a
+# CONNECT target, regardless of filter_mode or any allow list — including
+# in filter_mode: none. Intended for known DNS-over-HTTPS/DNS-over-TLS
+# resolver hostnames, which would otherwise let an allowed tunnel be used
+# to resolve arbitrary domains outside this proxy's own DNS filtering. See
+# configs/connect-denylist.txt.example. Empty path disables it.
+connect_denylist_file: /etc/agentgated/connect-denylist.txt

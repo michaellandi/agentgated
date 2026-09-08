@@ -25,13 +25,21 @@ func testLogger() *slog.Logger {
 
 func startProxy(t *testing.T, f filter.Filter) string {
 	t.Helper()
+	return startProxyWith(t, f, nil, nil)
+}
+
+// startProxyWith is startProxy plus the port-restriction and built-in
+// denylist knobs, for tests exercising those specifically. Passing nil for
+// either leaves it unrestricted, matching startProxy's behavior.
+func startProxyWith(t *testing.T, f filter.Filter, allowedPorts []string, denyList *filter.List) string {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
 	t.Cleanup(func() { ln.Close() })
 
-	p := New(tenant.StaticResolver{Filter: f}, testLogger())
+	p := New(tenant.StaticResolver{Filter: f}, testLogger(), allowedPorts, denyList)
 	go p.Serve(ln)
 	return ln.Addr().String()
 }
@@ -217,6 +225,59 @@ func TestConnectAllowsRawIPLiteralOnAllowList(t *testing.T) {
 	_, _, status := connectRequest(t, proxyAddr, upstream)
 	if status != http.StatusOK {
 		t.Fatalf("status = %d, want 200 for a raw IP explicitly on the allow list", status)
+	}
+}
+
+func TestConnectRejectsDisallowedPort(t *testing.T) {
+	upstream := echoServer(t) // random high port, not 443
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, []string{"443"}, nil)
+
+	_, _, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for a CONNECT target port outside connect_allowed_ports", status)
+	}
+}
+
+func TestConnectAllowsConfiguredPort(t *testing.T) {
+	upstream := echoServer(t)
+	_, upstreamPort, err := net.SplitHostPort(upstream)
+	if err != nil {
+		t.Fatalf("split upstream addr: %v", err)
+	}
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, []string{upstreamPort}, nil)
+
+	_, _, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for a CONNECT target port in connect_allowed_ports", status)
+	}
+}
+
+func TestConnectDenyListOverridesAllowedPolicy(t *testing.T) {
+	// A host explicitly allowed by tenant policy must still be blocked by
+	// the built-in denylist — it exists specifically to hold hosts (e.g.
+	// known DoH/DoT resolvers) that must never be reachable via CONNECT
+	// regardless of what any allow list says.
+	upstream := echoServer(t)
+	upstreamHost, _, err := net.SplitHostPort(upstream)
+	if err != nil {
+		t.Fatalf("split upstream addr: %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "connect-denylist.txt")
+	if err := os.WriteFile(path, []byte(upstreamHost+"\n"), 0o644); err != nil {
+		t.Fatalf("write connect denylist: %v", err)
+	}
+	denyList, err := filter.LoadList(path)
+	if err != nil {
+		t.Fatalf("load connect denylist: %v", err)
+	}
+
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, nil, denyList)
+
+	_, _, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for a host on the built-in denylist despite filter.None", status)
 	}
 }
 

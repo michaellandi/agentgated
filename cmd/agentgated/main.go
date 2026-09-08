@@ -76,8 +76,13 @@ func run(configPath string, logger *slog.Logger) error {
 		return fmt.Errorf("configuring policy resolver: %w", err)
 	}
 
+	connectDenyList, err := filter.LoadList(cfg.ConnectDenyListFile)
+	if err != nil {
+		return fmt.Errorf("loading connect denylist: %w", err)
+	}
+
 	p := proxy.New(cfg, resolver, cache.New(cfg.DNSCacheMaxTTL), logger)
-	cp := connectproxy.New(resolver, logger)
+	cp := connectproxy.New(resolver, logger, cfg.ConnectAllowedPorts, connectDenyList)
 
 	logger.Info("starting agentgated",
 		"version", version,
@@ -87,6 +92,8 @@ func run(configPath string, logger *slog.Logger) error {
 		"allowlist_entries", allowList.Len(),
 		"denylist_entries", denyList.Len(),
 		"connect_listen", cfg.ConnectListen,
+		"connect_allowed_ports", cfg.ConnectAllowedPorts,
+		"connect_denylist_entries", connectDenyList.Len(),
 		"multi_tenant", cfg.AllowListURLTemplate != "" || cfg.DenyListURLTemplate != "",
 	)
 

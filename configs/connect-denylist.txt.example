@@ -1,0 +1,39 @@
+# Hosts that are always blocked as a CONNECT target, regardless of
+# filter_mode or any allow list (static or per-tenant dynamic). One
+# hostname per line; a suffix match, same as allowlist_file/denylist_file.
+#
+# A permitted CONNECT tunnel isn't inspected — the proxy relays whatever
+# bytes the client sends. So even a fully trusted allow-listed host could
+# otherwise be used to run DNS-over-HTTPS or DNS-over-TLS through the
+# tunnel, resolving arbitrary domains completely outside this proxy's own
+# DNS filtering. This list exists to hold known public DoH/DoT resolver
+# hostnames so an allow list can never accidentally (or deliberately)
+# reopen that hole.
+#
+# This is a starting point, not exhaustive — review and extend it for
+# your deployment. To allow one of these for a real, reviewed reason,
+# remove the line; there is no separate override mechanism.
+
+# Cloudflare
+cloudflare-dns.com
+one.one.one.one
+mozilla.cloudflare-dns.com
+
+# Google
+dns.google
+
+# Quad9
+dns.quad9.net
+
+# OpenDNS
+doh.opendns.com
+
+# NextDNS
+dns.nextdns.io
+
+# AdGuard
+dns.adguard.com
+unfiltered.adguard-dns.com
+
+# CleanBrowsing
+doh.cleanbrowsing.org
