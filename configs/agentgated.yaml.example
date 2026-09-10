@@ -9,13 +9,28 @@ dns_upstream: "1.1.1.1:53"
 
 # Filtering mode, applied to both DNS queries and CONNECT targets:
 # none | allow | deny
-filter_mode: deny
+#
+# The names describe which list is authoritative, not the resulting
+# posture, and those point opposite ways:
+#   allow - an allow list, default-DENY: only hosts in allowlist_file pass.
+#           The restrictive mode. Use this if you want a hardened,
+#           allowlist-only gateway (e.g. replacing a default-deny setup
+#           like a Squid allowlist) -- with this mode, allowlist_file is
+#           the list that matters and must be populated, or every request
+#           is blocked.
+#   deny  - a deny list, default-ALLOW: everything passes except hosts in
+#           denylist_file. The permissive mode -- fine for casually
+#           blocklisting known-bad hosts, but deploying it against a threat
+#           model that assumes default-deny silently inverts that
+#           assumption.
+filter_mode: allow
 
 # One hostname per line; a suffix match (e.g. "example.com" also matches
-# "sub.example.com"). Only the file for the active filter_mode is used.
-# These are also the fallback lists used when allowlist_url_template /
-# denylist_url_template (below) are set but can't be resolved or fetched
-# for a given request.
+# "sub.example.com"). Only the file for the active filter_mode is used --
+# with the "allow" default above, that's allowlist_file; populate it with
+# every host the agent legitimately needs. These are also the fallback
+# lists used when allowlist_url_template / denylist_url_template (below)
+# are set but can't be resolved or fetched for a given request.
 allowlist_file: /etc/agentgated/allowlist.txt
 denylist_file: /etc/agentgated/denylist.txt
 

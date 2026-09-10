@@ -17,3 +17,4 @@
 
 # Personal local-dev config
 configs/local.yaml
+configs/agentgated.yaml

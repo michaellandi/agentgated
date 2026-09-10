@@ -23,7 +23,12 @@ through "harmless" DNS lookups or HTTP requests.
   and TCP
 - HTTP CONNECT tunnel proxy — filters by the tunnel's target hostname using
   the same allow/deny list as DNS, then relays bytes opaquely (no TLS
-  termination)
+  termination). Independent of that hostname policy, it also: restricts
+  which ports a target may use, always blocks hosts on a built-in denylist
+  (seeded with known DNS-over-HTTPS/DNS-over-TLS resolvers) regardless of
+  any allow list, rejects a target that resolves to an internal-only
+  address (loopback, link-local/cloud-metadata, private, or shared/CGNAT
+  space), and bounds how long any tunnel can stay open
 - Static allow list or deny list filtering by hostname (suffix-matched, so an
   entry also covers its subdomains), shared by both proxies
 - Optional multi-tenant mode: resolve each request's allow/deny list from a
@@ -99,9 +104,9 @@ options:
 |---|---|---|
 | `dns_listen` | `:53` | Address to listen on for DNS (UDP and TCP) |
 | `dns_upstream` | `1.1.1.1:53` | Upstream resolver for permitted DNS queries |
-| `filter_mode` | `deny` | `none`, `allow`, or `deny` — applied to both DNS and CONNECT |
-| `allowlist_file` | `/etc/agentgated/allowlist.txt` | Hostnames to allow, one per line |
-| `denylist_file` | `/etc/agentgated/denylist.txt` | Hostnames to block, one per line |
+| `filter_mode` | `allow` | `none`, `allow`, or `deny` — applied to both DNS and CONNECT. **Named for which list is authoritative, not the resulting posture**: `allow` (an allow list) is default-**deny** and restrictive; `deny` (a deny list) is default-**allow** and permissive. Default is the restrictive `allow` mode — deploying `deny` against a threat model that assumes default-deny silently inverts it |
+| `allowlist_file` | `/etc/agentgated/allowlist.txt` | Hostnames to allow, one per line — the authoritative list under the default `filter_mode: allow` |
+| `denylist_file` | `/etc/agentgated/denylist.txt` | Hostnames to block, one per line — the authoritative list under `filter_mode: deny` |
 | `dns_blocked_ip` | *(empty)* | IP to answer with for a blocked `A` query; empty means NXDOMAIN |
 | `dns_cache` | `true` | Enable in-memory DNS response caching |
 | `dns_cache_max_ttl` | `1h` | Upper bound on cached DNS entry lifetime |
@@ -162,12 +167,15 @@ responsibility.
 ## Running locally
 
 ```bash
+cp configs/agentgated.yaml.example configs/agentgated.yaml
 go run ./cmd/agentgated -config ./configs/agentgated.yaml
 dig @127.0.0.1 -p 5353 example.com   # if dns_listen: ":5353" in your config
 ```
 
 Binding to port 53 requires root; for local testing without `sudo`, set
-`dns_listen: "127.0.0.1:5353"` in your config.
+`dns_listen: "127.0.0.1:5353"` in your config. `filter_mode: allow` is the
+default, so `example.com` above only resolves because it's already in
+[`configs/allowlist.txt.example`](configs/allowlist.txt.example).
 
 To test the CONNECT proxy, set `connect_listen: "127.0.0.1:3128"` and:
 
@@ -210,11 +218,17 @@ policy (see the `connect_*` options above):
   filtering.
 - **Private/internal-address blocking.** `connect_block_private_ips`
   (default `true`) rejects a target resolving to a loopback, link-local
-  (including a cloud metadata endpoint like `169.254.169.254`), private, or
-  unspecified address, regardless of any allow list. The resolved address is
+  (including a cloud metadata endpoint like `169.254.169.254`), private,
+  unspecified, or shared/carrier-grade-NAT (`100.64.0.0/10` — notably what
+  overlay networks like Tailscale use) address, regardless of any allow
+  list; Go's own `net.IP.IsPrivate` only covers RFC 1918 + RFC 4193 and its
+  documentation says as much ("should not be used for access control"), so
+  this is deliberately broader than that one check. The resolved address is
   validated once and dialed directly rather than the hostname a second time,
   so a DNS answer that changes between the check and the dial can't slip a
-  disallowed address through.
+  disallowed address through — and if resolution itself fails, the target is
+  blocked rather than falling through to the dialer's own unvalidated
+  lookup.
 - **Bounded tunnel lifetime.** `connect_idle_timeout` and
   `connect_max_duration` close a tunnel after inactivity or a hard ceiling,
   respectively, so a permitted tunnel can't stay open indefinitely.

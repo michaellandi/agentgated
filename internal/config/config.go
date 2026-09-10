@@ -11,7 +11,18 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FilterMode selects how queries are evaluated against the allow/deny lists.
+// FilterMode selects how queries are evaluated against the allow/deny
+// lists. The names describe which list is authoritative, not the resulting
+// security posture, and those two things point opposite ways:
+//   - FilterAllow (an allow list) is default-deny: only listed hosts pass.
+//     This is the restrictive mode -- if you want a hardened, allowlist-only
+//     gateway (e.g. replacing a default-deny setup like a Squid allowlist),
+//     this is the one you want, and it's not the default.
+//   - FilterDeny (a deny list) is default-allow: everything passes except
+//     listed hosts. This is the permissive mode. It's Default()'s value
+//     below, chosen so a first run doesn't need an allow list populated to
+//     pass any traffic -- but deploying it as-is against a threat model that
+//     assumes default-deny silently inverts that assumption.
 type FilterMode string
 
 const (
@@ -94,7 +105,7 @@ func Default() Config {
 	return Config{
 		DNSListen:              ":53",
 		DNSUpstream:            "1.1.1.1:53",
-		FilterMode:             FilterDeny,
+		FilterMode:             FilterAllow,
 		AllowListFile:          "/etc/agentgated/allowlist.txt",
 		DenyListFile:           "/etc/agentgated/denylist.txt",
 		DNSCache:               true,

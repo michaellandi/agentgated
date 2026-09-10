@@ -168,15 +168,18 @@ func (p *Proxy) handle(conn net.Conn) {
 	relay(conn, upstream, p.idleTimeout, p.maxDuration)
 }
 
-// resolveSafeAddr resolves host and rejects it if any candidate address is
-// loopback, link-local, private, or unspecified — guarding against an
-// allowed hostname (or one later rebound via DNS) reaching an internal-only
-// service such as a cloud metadata endpoint. On success it returns the
-// resolved IP joined with port rather than host again, so the address
-// actually dialed is the one that was validated, not whatever a second,
-// independent resolution might return. If resolution itself fails, it
-// returns host:port unchanged and ok=true, leaving the failure to surface
-// from the dial itself (as today) rather than misreporting it as blocked.
+// resolveSafeAddr resolves host and rejects it if resolution fails or any
+// candidate address is disallowed (see isDisallowedIP) — guarding against
+// an allowed hostname (or one later rebound via DNS) reaching an
+// internal-only service such as a cloud metadata endpoint. On success it
+// returns the resolved IP joined with port rather than host again, so the
+// address actually dialed is the one that was validated, not whatever a
+// second, independent resolution might return. Resolution failure fails
+// closed rather than falling through to the dialer's own (unvalidated)
+// resolution: a resolver that answers the validating lookup and the
+// dialer's lookup differently -- deliberately, for an attacker-controlled
+// name, or just by transient failure -- must not be able to use that gap
+// to reach an address that was never checked.
 func resolveSafeAddr(ctx context.Context, host, port string) (addr string, ok bool) {
 	if ip := net.ParseIP(host); ip != nil {
 		if isDisallowedIP(ip) {
@@ -187,7 +190,7 @@ func resolveSafeAddr(ctx context.Context, host, port string) (addr string, ok bo
 
 	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
 	if err != nil || len(addrs) == 0 {
-		return net.JoinHostPort(host, port), true
+		return "", false
 	}
 	for _, a := range addrs {
 		if isDisallowedIP(a.IP) {
@@ -197,9 +200,41 @@ func resolveSafeAddr(ctx context.Context, host, port string) (addr string, ok bo
 	return net.JoinHostPort(addrs[0].IP.String(), port), true
 }
 
+// extraDisallowedCIDRs covers ranges net.IP's own IsPrivate/IsLoopback/
+// IsLinkLocalUnicast/IsUnspecified don't: those are RFC 1918 + RFC 4193
+// only (the Go stdlib's own IsPrivate doc says as much: "does not describe
+// a security property of addresses, and should not be used for access
+// control"). Shared address space (100.64.0.0/10, RFC 6598) is the gap that
+// matters most in practice -- it's what carrier-grade NAT and overlay
+// networks like Tailscale use, so an internal-only gateway can live there
+// on a network this guard is meant to protect. The other two are lower
+// stakes but equally uncovered: benchmark-testing space (RFC 2544) and the
+// still-reserved 240.0.0.0/4.
+var extraDisallowedCIDRs = []*net.IPNet{
+	mustCIDR("100.64.0.0/10"),
+	mustCIDR("198.18.0.0/15"),
+	mustCIDR("240.0.0.0/4"),
+}
+
+func mustCIDR(s string) *net.IPNet {
+	_, n, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return n
+}
+
 func isDisallowedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() || ip.IsUnspecified()
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() ||
+		ip.IsPrivate() || ip.IsUnspecified() {
+		return true
+	}
+	for _, cidr := range extraDisallowedCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 // relay copies bytes bidirectionally between a and b until both directions

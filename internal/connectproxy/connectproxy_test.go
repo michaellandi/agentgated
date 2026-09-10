@@ -316,6 +316,44 @@ func TestConnectBlocksPrivateIPWhenGuardEnabled(t *testing.T) {
 	}
 }
 
+func TestConnectBlocksUnresolvableHostWhenGuardEnabled(t *testing.T) {
+	// resolveSafeAddr must fail closed when its own lookup errors, rather
+	// than falling through to the dialer's own unvalidated resolution --
+	// otherwise a resolver that answers the validating lookup and the
+	// dialer's lookup differently could reach an address that was never
+	// checked. ".invalid" is reserved by RFC 2606 to never resolve.
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{BlockPrivateIPs: true})
+
+	_, _, status := connectRequest(t, proxyAddr, "this-host-does-not-exist.invalid:443")
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for an unresolvable host with connect_block_private_ips enabled", status)
+	}
+}
+
+func TestIsDisallowedIPCoversSharedAndReservedRanges(t *testing.T) {
+	// net.IP.IsPrivate() only covers RFC 1918 + RFC 4193 (its own doc says
+	// as much, and explicitly warns it "should not be used for access
+	// control") -- these ranges are the gap, most importantly shared
+	// address space (100.64.0.0/10, RFC 6598), which carrier-grade NAT and
+	// overlay networks such as Tailscale use.
+	disallowed := []string{
+		"100.64.0.1",      // RFC 6598 shared address space (CGNAT / Tailscale)
+		"100.127.255.254", // top of 100.64.0.0/10
+		"198.18.0.1",      // RFC 2544 benchmark testing
+		"240.0.0.1",       // reserved for future use
+		"239.1.1.1",       // global (non-link-local) multicast
+	}
+	for _, ip := range disallowed {
+		if !isDisallowedIP(net.ParseIP(ip)) {
+			t.Errorf("isDisallowedIP(%q) = false, want true", ip)
+		}
+	}
+
+	if isDisallowedIP(net.ParseIP("93.184.216.34")) {
+		t.Errorf("isDisallowedIP(%q) = true, want false for an ordinary public address", "93.184.216.34")
+	}
+}
+
 func TestConnectIdleTimeoutClosesTunnel(t *testing.T) {
 	upstream := echoServer(t)
 	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{IdleTimeout: 50 * time.Millisecond})
