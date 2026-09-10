@@ -82,7 +82,13 @@ func run(configPath string, logger *slog.Logger) error {
 	}
 
 	p := proxy.New(cfg, resolver, cache.New(cfg.DNSCacheMaxTTL), logger)
-	cp := connectproxy.New(resolver, logger, cfg.ConnectAllowedPorts, connectDenyList)
+	cp := connectproxy.New(resolver, logger, connectproxy.Options{
+		AllowedPorts:    cfg.ConnectAllowedPorts,
+		DenyList:        connectDenyList,
+		BlockPrivateIPs: cfg.ConnectBlockPrivateIPs,
+		IdleTimeout:     cfg.ConnectIdleTimeout,
+		MaxDuration:     cfg.ConnectMaxDuration,
+	})
 
 	logger.Info("starting agentgated",
 		"version", version,
@@ -94,6 +100,9 @@ func run(configPath string, logger *slog.Logger) error {
 		"connect_listen", cfg.ConnectListen,
 		"connect_allowed_ports", cfg.ConnectAllowedPorts,
 		"connect_denylist_entries", connectDenyList.Len(),
+		"connect_block_private_ips", cfg.ConnectBlockPrivateIPs,
+		"connect_idle_timeout", cfg.ConnectIdleTimeout,
+		"connect_max_duration", cfg.ConnectMaxDuration,
 		"multi_tenant", cfg.AllowListURLTemplate != "" || cfg.DenyListURLTemplate != "",
 	)
 

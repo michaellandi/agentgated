@@ -2,6 +2,7 @@ package connectproxy
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -23,15 +24,17 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// startProxy starts a Proxy with every Options knob left at its zero value
+// (unrestricted ports, no denylist, private IPs allowed, no idle/max
+// tunnel limits) -- the tests using it are exercising something other than
+// those knobs, and most dial loopback fixtures that BlockPrivateIPs would
+// otherwise reject.
 func startProxy(t *testing.T, f filter.Filter) string {
 	t.Helper()
-	return startProxyWith(t, f, nil, nil)
+	return startProxyWith(t, f, Options{})
 }
 
-// startProxyWith is startProxy plus the port-restriction and built-in
-// denylist knobs, for tests exercising those specifically. Passing nil for
-// either leaves it unrestricted, matching startProxy's behavior.
-func startProxyWith(t *testing.T, f filter.Filter, allowedPorts []string, denyList *filter.List) string {
+func startProxyWith(t *testing.T, f filter.Filter, opts Options) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -39,7 +42,7 @@ func startProxyWith(t *testing.T, f filter.Filter, allowedPorts []string, denyLi
 	}
 	t.Cleanup(func() { ln.Close() })
 
-	p := New(tenant.StaticResolver{Filter: f}, testLogger(), allowedPorts, denyList)
+	p := New(tenant.StaticResolver{Filter: f}, testLogger(), opts)
 	go p.Serve(ln)
 	return ln.Addr().String()
 }
@@ -230,7 +233,7 @@ func TestConnectAllowsRawIPLiteralOnAllowList(t *testing.T) {
 
 func TestConnectRejectsDisallowedPort(t *testing.T) {
 	upstream := echoServer(t) // random high port, not 443
-	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, []string{"443"}, nil)
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{AllowedPorts: []string{"443"}})
 
 	_, _, status := connectRequest(t, proxyAddr, upstream)
 	if status != http.StatusForbidden {
@@ -244,7 +247,7 @@ func TestConnectAllowsConfiguredPort(t *testing.T) {
 	if err != nil {
 		t.Fatalf("split upstream addr: %v", err)
 	}
-	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, []string{upstreamPort}, nil)
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{AllowedPorts: []string{upstreamPort}})
 
 	_, _, status := connectRequest(t, proxyAddr, upstream)
 	if status != http.StatusOK {
@@ -273,12 +276,99 @@ func TestConnectDenyListOverridesAllowedPolicy(t *testing.T) {
 		t.Fatalf("load connect denylist: %v", err)
 	}
 
-	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, nil, denyList)
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{DenyList: denyList})
 
 	_, _, status := connectRequest(t, proxyAddr, upstream)
 	if status != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403 for a host on the built-in denylist despite filter.None", status)
 	}
+}
+
+func TestConnectBlocksPrivateIPWhenGuardEnabled(t *testing.T) {
+	// TestConnectAllowsRawIPLiteralOnAllowList shows a loopback target
+	// explicitly on the allow list is normally permitted. With the
+	// private-IP guard enabled, it must be blocked anyway -- the guard
+	// overrides tenant policy the same way the built-in denylist does.
+	upstream := echoServer(t)
+	upstreamIP, _, err := net.SplitHostPort(upstream)
+	if err != nil {
+		t.Fatalf("split upstream addr: %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "allowlist.txt")
+	if err := os.WriteFile(path, []byte(upstreamIP+"\n"), 0o644); err != nil {
+		t.Fatalf("write allow list: %v", err)
+	}
+	allowList, err := filter.LoadList(path)
+	if err != nil {
+		t.Fatalf("load allow list: %v", err)
+	}
+
+	proxyAddr := startProxyWith(t,
+		filter.Filter{Mode: filter.DenyList, AllowList: allowList},
+		Options{BlockPrivateIPs: true},
+	)
+
+	_, _, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 for a loopback target with connect_block_private_ips enabled", status)
+	}
+}
+
+func TestConnectIdleTimeoutClosesTunnel(t *testing.T) {
+	upstream := echoServer(t)
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{IdleTimeout: 50 * time.Millisecond})
+
+	conn, br, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+
+	// Nothing is sent in either direction; the tunnel must be closed by
+	// idle_timeout well before our own read deadline below fires.
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := br.Read(make([]byte, 1)); err == nil {
+		t.Fatalf("read succeeded, want the idle tunnel closed by idle_timeout")
+	} else if isDeadlineExceeded(err) {
+		t.Fatalf("read hit our own 3s deadline: idle_timeout did not close the tunnel: %v", err)
+	}
+}
+
+func TestConnectMaxDurationClosesTunnel(t *testing.T) {
+	upstream := echoServer(t)
+	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{MaxDuration: 100 * time.Millisecond})
+
+	conn, br, status := connectRequest(t, proxyAddr, upstream)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+
+	// Confirm the tunnel works before the ceiling hits.
+	if _, err := conn.Write([]byte("ping")); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	pingBuf := make([]byte, 4)
+	if _, err := io.ReadFull(br, pingBuf); err != nil {
+		t.Fatalf("read echo: %v", err)
+	}
+
+	// No idle_timeout is set, so only max_duration can close this -- and it
+	// must, even though the tunnel was just actively used.
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := br.Read(make([]byte, 1)); err == nil {
+		t.Fatalf("read succeeded, want the tunnel closed by max_duration despite being active")
+	} else if isDeadlineExceeded(err) {
+		t.Fatalf("read hit our own 3s deadline: max_duration did not close the tunnel: %v", err)
+	}
+}
+
+// isDeadlineExceeded reports whether err is our own test-side read deadline
+// firing, as opposed to the proxy closing the connection -- the two are
+// otherwise both just "a read error" and must not be confused.
+func isDeadlineExceeded(err error) bool {
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
 }
 
 func TestConnectRejectsNonConnectMethod(t *testing.T) {

@@ -107,6 +107,11 @@ options:
 | `dns_cache_max_ttl` | `1h` | Upper bound on cached DNS entry lifetime |
 | `log_path` | *(empty)* | Log file path; empty logs to stdout |
 | `connect_listen` | *(empty)* | Address for the HTTP CONNECT proxy, e.g. `:3128`; empty disables it |
+| `connect_allowed_ports` | `["443"]` | Ports a CONNECT target may use; empty means unrestricted |
+| `connect_denylist_file` | `/etc/agentgated/connect-denylist.txt` | Hostnames a CONNECT target is always blocked against, regardless of `filter_mode` or any allow list — see [Security model and known limitations](#security-model-and-known-limitations) |
+| `connect_block_private_ips` | `true` | Reject a CONNECT target resolving to a loopback/link-local/private/unspecified address, regardless of policy |
+| `connect_idle_timeout` | `5m` | Close a CONNECT tunnel after this long with no data in either direction; `0` disables it |
+| `connect_max_duration` | `1h` | Close a CONNECT tunnel after this long regardless of activity; `0` disables it |
 | `allowlist_url_template` | *(empty)* | URL template to resolve a per-request allow list from; see [Multi-tenant policy resolution](#multi-tenant-policy-resolution) |
 | `denylist_url_template` | *(empty)* | URL template to resolve a per-request deny list from; see [Multi-tenant policy resolution](#multi-tenant-policy-resolution) |
 | `policy_refresh_interval` | `5m` | How often a resolved policy URL is re-fetched |
@@ -188,25 +193,57 @@ a hostname, there's no way to enumerate bad IPs in advance, so a raw IP must
 be explicitly present on the allow list to pass, in every mode except
 `none`.
 
+What the CONNECT proxy additionally guarantees, independent of hostname
+policy (see the `connect_*` options above):
+- **Port restriction.** A target's port must be in `connect_allowed_ports`
+  (default: 443 only). An allowed hostname can't be reached on a different
+  port running a different service — notably a DNS-over-TLS resolver (853).
+- **A hard-override denylist.** `connect_denylist_file` always blocks a
+  matching host, even under `filter_mode: none` or an allow list — static or
+  dynamically resolved via `allowlist_url_template` — that includes it; deny
+  wins over allow here, with no override mechanism other than editing the
+  file. It ships seeded with known public DNS-over-HTTPS/DNS-over-TLS
+  resolver hostnames (`configs/connect-denylist.txt.example`), since on port
+  443 those are otherwise indistinguishable from ordinary HTTPS traffic —
+  letting an allowed tunnel become a channel for resolving (and exfiltrating
+  data through) arbitrary domains entirely outside agentgated's own DNS
+  filtering.
+- **Private/internal-address blocking.** `connect_block_private_ips`
+  (default `true`) rejects a target resolving to a loopback, link-local
+  (including a cloud metadata endpoint like `169.254.169.254`), private, or
+  unspecified address, regardless of any allow list. The resolved address is
+  validated once and dialed directly rather than the hostname a second time,
+  so a DNS answer that changes between the check and the dial can't slip a
+  disallowed address through.
+- **Bounded tunnel lifetime.** `connect_idle_timeout` and
+  `connect_max_duration` close a tunnel after inactivity or a hard ceiling,
+  respectively, so a permitted tunnel can't stay open indefinitely.
+
 What it does not (yet) guarantee, even with every other egress path from
 the network blocked and *all* traffic forced through agentgated's own
-listeners: neither proxy inspects content once a target is decided.
+listeners: neither proxy inspects content once a target is fully permitted.
 - **DNS tunneling to a permitted domain.** Suffix matching says nothing
   about the labels *under* an allowed/non-denied domain, so an agent can
   encode data into query names like `<data>.api.anthropic.com` and have it
   leave via every DNS query, regardless of what the response is. This is
   the gap the planned exfiltration heuristics (entropy/beaconing analysis
   on the query log) are meant to eventually close.
-- **CONNECT tunnels are byte-blind past the hostname check**, with no port
-  or protocol restriction. Once a hostname is permitted, an agent can send
-  it arbitrary HTTP request bodies/paths/headers, or tunnel an unrelated
-  protocol (e.g. DNS-over-HTTPS/TLS) to it on any port — agentgated has no
-  visibility into what crosses an open tunnel.
+- **CONNECT tunnels are byte-blind once a target clears every check above**
+  (host, port, not on the built-in denylist, not a disallowed IP). Within
+  those bounds, an agent can still send arbitrary HTTP request bodies,
+  paths, and headers to an allowed host — e.g. exfiltrating via an allowed
+  storage/paste/gist service's own write API — since agentgated has no
+  visibility into what crosses an open tunnel. The port restriction and
+  built-in denylist close the specific DNS-over-HTTPS/TLS bypass this
+  previously allowed through *any* allowed hostname, but they don't give
+  agentgated content-level visibility in general; only TLS termination
+  (which agentgated deliberately does not do) could.
 
 In short: tightening `filter_mode: allow` to a small, trusted set of
 hostnames meaningfully shrinks what an agent can reach, but a hostname
 allow list alone doesn't guarantee no data can leave through an allowed
-destination — only that the destination is one you chose to trust.
+destination — only that the destination is one you chose to trust, on the
+port and address you meant to trust it on.
 
 ## Origins
 

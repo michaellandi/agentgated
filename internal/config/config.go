@@ -55,6 +55,27 @@ type Config struct {
 	// there is no separate override list. Empty path disables it.
 	ConnectDenyListFile string `yaml:"connect_denylist_file"`
 
+	// ConnectBlockPrivateIPs rejects a CONNECT target that resolves to a
+	// loopback, link-local, private, or unspecified address, regardless of
+	// filter_mode or any allow list — including one populated from a
+	// dynamic AllowListURLTemplate source, which agentgated does not
+	// authenticate. Without this, an allowed hostname (or one later
+	// rebound via DNS to a different address) can reach internal-only
+	// services, e.g. a cloud metadata endpoint like 169.254.169.254. The
+	// resolved address is validated once and dialed directly — the
+	// hostname is not resolved a second time — so a rebind between check
+	// and dial can't slip through.
+	ConnectBlockPrivateIPs bool `yaml:"connect_block_private_ips"`
+
+	// ConnectIdleTimeout closes a CONNECT tunnel after this long without
+	// data in either direction. Zero disables it.
+	ConnectIdleTimeout time.Duration `yaml:"connect_idle_timeout"`
+
+	// ConnectMaxDuration closes a CONNECT tunnel after this long regardless
+	// of activity, capping how long any single tunnel can stay open. Zero
+	// disables it.
+	ConnectMaxDuration time.Duration `yaml:"connect_max_duration"`
+
 	// AllowListURLTemplate and DenyListURLTemplate, when set, resolve a
 	// per-request policy source URL instead of using the static list
 	// files above. Supported placeholders: {ip} (client source IP) and
@@ -71,17 +92,20 @@ type Config struct {
 // Default returns the configuration used for any fields a loaded file omits.
 func Default() Config {
 	return Config{
-		DNSListen:             ":53",
-		DNSUpstream:           "1.1.1.1:53",
-		FilterMode:            FilterDeny,
-		AllowListFile:         "/etc/agentgated/allowlist.txt",
-		DenyListFile:          "/etc/agentgated/denylist.txt",
-		DNSCache:              true,
-		DNSCacheMaxTTL:        time.Hour,
-		PolicyRefreshInterval: 5 * time.Minute,
-		PolicyFetchTimeout:    10 * time.Second,
-		ConnectAllowedPorts:   []string{"443"},
-		ConnectDenyListFile:   "/etc/agentgated/connect-denylist.txt",
+		DNSListen:              ":53",
+		DNSUpstream:            "1.1.1.1:53",
+		FilterMode:             FilterDeny,
+		AllowListFile:          "/etc/agentgated/allowlist.txt",
+		DenyListFile:           "/etc/agentgated/denylist.txt",
+		DNSCache:               true,
+		DNSCacheMaxTTL:         time.Hour,
+		PolicyRefreshInterval:  5 * time.Minute,
+		PolicyFetchTimeout:     10 * time.Second,
+		ConnectAllowedPorts:    []string{"443"},
+		ConnectDenyListFile:    "/etc/agentgated/connect-denylist.txt",
+		ConnectBlockPrivateIPs: true,
+		ConnectIdleTimeout:     5 * time.Minute,
+		ConnectMaxDuration:     time.Hour,
 	}
 }
 

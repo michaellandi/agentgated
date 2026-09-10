@@ -75,3 +75,17 @@ connect_allowed_ports: ["443"]
 # to resolve arbitrary domains outside this proxy's own DNS filtering. See
 # configs/connect-denylist.txt.example. Empty path disables it.
 connect_denylist_file: /etc/agentgated/connect-denylist.txt
+
+# Reject a CONNECT target that resolves to a loopback, link-local (this
+# includes a cloud metadata endpoint like 169.254.169.254), private, or
+# unspecified address — regardless of filter_mode or any allow list. The
+# resolved address is validated once and dialed directly, not re-resolved,
+# so a DNS answer that changes between the check and the dial can't slip a
+# disallowed address through.
+connect_block_private_ips: true
+
+# Close a CONNECT tunnel after this long with no data in either direction,
+# or after this long total regardless of activity. Either 0 disables that
+# limit.
+connect_idle_timeout: 5m
+connect_max_duration: 1h
