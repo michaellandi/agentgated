@@ -223,7 +223,10 @@ policy (see the `connect_*` options above):
   overlay networks like Tailscale use) address, regardless of any allow
   list; Go's own `net.IP.IsPrivate` only covers RFC 1918 + RFC 4193 and its
   documentation says as much ("should not be used for access control"), so
-  this is deliberately broader than that one check. The resolved address is
+  this is deliberately broader than that one check. It also looks inside
+  6to4, NAT64, and Teredo IPv6 addresses, each of which can carry an
+  otherwise-disallowed IPv4 address encoded in its low bits behind what
+  otherwise looks like ordinary global-unicast IPv6. The resolved address is
   validated once and dialed directly rather than the hostname a second time,
   so a DNS answer that changes between the check and the dial can't slip a
   disallowed address through — and if resolution itself fails, the target is

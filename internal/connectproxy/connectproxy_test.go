@@ -354,6 +354,31 @@ func TestIsDisallowedIPCoversSharedAndReservedRanges(t *testing.T) {
 	}
 }
 
+func TestIsDisallowedIPUnwrapsEmbeddedIPv4(t *testing.T) {
+	// 6to4, NAT64, and Teredo addresses can each carry an otherwise-
+	// disallowed IPv4 address inside an address that otherwise looks like
+	// ordinary global-unicast IPv6, which net.IP's own checks don't unpack.
+	cases := []struct {
+		name string
+		ip   string
+	}{
+		{"6to4 embedding a private address (10.0.0.1)", "2002:a00:1::"},
+		{"NAT64 embedding a CGNAT address (100.64.0.1)", "64:ff9b::6440:1"},
+		{"Teredo embedding loopback (127.0.0.1, XOR-obfuscated)", "2001::80ff:fffe"},
+	}
+	for _, c := range cases {
+		if !isDisallowedIP(net.ParseIP(c.ip)) {
+			t.Errorf("isDisallowedIP(%q) = false, want true (%s)", c.ip, c.name)
+		}
+	}
+
+	// A 6to4 address embedding an ordinary public IPv4 address must not be
+	// blocked just for being a transition-mechanism address.
+	if isDisallowedIP(net.ParseIP("2002:5db8:d422::")) { // embeds 93.184.212.34
+		t.Errorf("isDisallowedIP(2002:5db8:d422::) = true, want false: embeds a public address")
+	}
+}
+
 func TestConnectIdleTimeoutClosesTunnel(t *testing.T) {
 	upstream := echoServer(t)
 	proxyAddr := startProxyWith(t, filter.Filter{Mode: filter.None}, Options{IdleTimeout: 50 * time.Millisecond})

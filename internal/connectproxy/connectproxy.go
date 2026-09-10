@@ -224,6 +224,39 @@ func mustCIDR(s string) *net.IPNet {
 	return n
 }
 
+// ipv4TransitionPrefixes are IPv6 ranges that carry an embedded IPv4
+// address net.IP's own checks don't look inside: an address in one of
+// these can look like ordinary global-unicast IPv6 while actually routing
+// to whatever IPv4 address (private, CGNAT, loopback...) is encoded in its
+// low bits. All three prefixes are reserved exclusively for this purpose
+// (IANA special-purpose registries), so matching one is never a false
+// positive. Teredo's embedded client address is additionally obfuscated by
+// XOR with 0xFFFFFFFF per RFC 4380.
+var (
+	sixToFourPrefix = mustCIDR("2002::/16")    // RFC 3056
+	nat64Prefix     = mustCIDR("64:ff9b::/96") // RFC 6052 well-known prefix
+	teredoPrefix    = mustCIDR("2001::/32")    // RFC 4380
+)
+
+// embeddedIPv4 extracts the IPv4 address encoded in a 6to4, NAT64, or
+// Teredo IPv6 address, or nil if ip is none of those.
+func embeddedIPv4(ip net.IP) net.IP {
+	ip16 := ip.To16()
+	if ip16 == nil || ip.To4() != nil {
+		return nil
+	}
+	switch {
+	case sixToFourPrefix.Contains(ip16):
+		return net.IPv4(ip16[2], ip16[3], ip16[4], ip16[5])
+	case nat64Prefix.Contains(ip16):
+		return net.IPv4(ip16[12], ip16[13], ip16[14], ip16[15])
+	case teredoPrefix.Contains(ip16):
+		return net.IPv4(ip16[12]^0xFF, ip16[13]^0xFF, ip16[14]^0xFF, ip16[15]^0xFF)
+	default:
+		return nil
+	}
+}
+
 func isDisallowedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() ||
 		ip.IsPrivate() || ip.IsUnspecified() {
@@ -233,6 +266,9 @@ func isDisallowedIP(ip net.IP) bool {
 		if cidr.Contains(ip) {
 			return true
 		}
+	}
+	if embedded := embeddedIPv4(ip); embedded != nil {
+		return isDisallowedIP(embedded)
 	}
 	return false
 }

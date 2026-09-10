@@ -17,12 +17,14 @@ import (
 //   - FilterAllow (an allow list) is default-deny: only listed hosts pass.
 //     This is the restrictive mode -- if you want a hardened, allowlist-only
 //     gateway (e.g. replacing a default-deny setup like a Squid allowlist),
-//     this is the one you want, and it's not the default.
+//     this is the one you want. It's Default()'s value below: a security
+//     gate should fail closed when a deployer hasn't made an explicit
+//     choice, even though that means an unpopulated allowlist_file blocks
+//     everything until one is filled in.
 //   - FilterDeny (a deny list) is default-allow: everything passes except
-//     listed hosts. This is the permissive mode. It's Default()'s value
-//     below, chosen so a first run doesn't need an allow list populated to
-//     pass any traffic -- but deploying it as-is against a threat model that
-//     assumes default-deny silently inverts that assumption.
+//     listed hosts. This is the permissive mode -- fine for casually
+//     blocklisting known-bad hosts, but deploying it against a threat model
+//     that assumes default-deny silently inverts that assumption.
 type FilterMode string
 
 const (
